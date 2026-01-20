@@ -2,35 +2,37 @@ import requests
 from bs4 import BeautifulSoup
 import csv
 
+base_url = "http://quotes.toscrape.com"
+current_page = "/page/1/"
+all_quotes = []
 
-def scrape_quotes():
-    # 1. The URL we want to scrape
-    url = "http://quotes.toscrape.com"
+print("🚀 Starting the Multi-Page Scraper...")
 
-    # 2. Ask the website for the data
-    print(f"Connecting to {url}...")
-    response = requests.get(url)
+# The 'While' loop keeps going as long as there is a "Next" button
+while current_page:
+    response = requests.get(base_url + current_page)
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-    if response.status_code == 200:
-        # 3. Parse the HTML content
-        soup = BeautifulSoup(response.text, 'html.parser')
-        quotes = soup.find_all('div', class_='quote')
+    # Extract quotes from the current page
+    quotes = soup.find_all('div', class_='quote')
+    for quote in quotes:
+        text = quote.find('span', class_='text').text
+        author = quote.find('small', class_='author').text
+        all_quotes.append([text, author])
 
-        # 4. Create a CSV file to save the data
-        with open('scraped_quotes.csv', 'w', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Quote", "Author"])  # Headers
+    print(f"✅ Scraped: {base_url + current_page}")
 
-            print("Scraping and saving data...")
-            for quote in quotes:
-                text = quote.find('span', class_='text').text
-                author = quote.find('small', class_='author').text
-                writer.writerow([text, author])
-
-        print("Success! Data saved to 'scraped_quotes.csv'.")
+    # Logic to find the "Next" button link
+    next_btn = soup.find('li', class_='next')
+    if next_btn:
+        current_page = next_btn.find('a')['href']
     else:
-        print(f"Failed to reach website. Error code: {response.status_code}")
+        current_page = None  # This stops the loop when no "Next" button exists
 
+# Save all 100 quotes to your CSV
+with open('scraped_quotes.csv', 'w', newline='', encoding='utf-8') as file:
+    writer = csv.writer(file)
+    writer.writerow(['Quote', 'Author'])
+    writer.writerows(all_quotes)
 
-if __name__ == "__main__":
-    scrape_quotes()
+print(f"\n✨ Done! Total quotes collected: {len(all_quotes)}")
