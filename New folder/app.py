@@ -1,80 +1,171 @@
-import import streamlit as st
+import streamlit as st
 import pandas as pd
 import os
 import pdfplumber
-import re
+import base64
+import zipfile
+import shutil
+from io import BytesIO
 from datetime import datetime
 
-# --- CONFIGURATION ---
+# --- CONFIG ---
 DB_FILE = "cv_database.csv"
 SAVE_FOLDER = "cv_files"
+ADMIN_PASSWORD = "admin123"
+
 if not os.path.exists(SAVE_FOLDER): os.makedirs(SAVE_FOLDER)
 
-# --- THE AUDIT ENGINE ---
-def run_auto_audit(text):
-    t = text.lower()
-    checks = {
-        "Education": ["education", "degree", "university", "college"],
-        "Experience": ["experience", "work", "employment", "internship"],
-        "Skills": ["skills", "tools", "technologies", "competencies"]
+
+# --- DETECTION ENGINE ---
+def perform_detailed_audit(text):
+    t = " ".join(text.lower().split())
+    criteria = {
+        "Personal Profile": ["profile", "summary", "objective", "about me", "career", "biography", "statement"],
+        "Personal Details": ["nationality", "date of birth", "gender", "marital status", "id number", "dob", "bio",
+                             "residence", "status"],
+        "Contact Info": ["email", "phone", "address", "contact", "cell", "telephone", "mobile", "p.o box", "tel"],
+        "Language Proficiency": ["language", "english", "swahili", "proficiency", "speak", "linguistic", "tongue"],
+        "Academic Qualification": ["academic", "education", "degree", "university", "school", "institution", "college",
+                                   "kcse", "studies"],
+        "Professional Qualification": ["professional qualification", "certification", "certified", "accreditation",
+                                       "diploma", "member of", "registration"],
+        "Professional Experience": ["experience", "employment", "work history", "career", "professional background",
+                                    "internship", "duties", "responsibilities"],
+        "Training & Workshops": ["training", "workshop", "seminar", "course", "participation", "conference"],
+        "Technical & Computer Literacy": ["computer", "literacy", "software", "ict", "digital", "packages", "office",
+                                          "excel", "word", "it skills"],
+        "Referees": ["referees", "references", "recommendation", "referee", "persons"]
     }
-
-    results = []
+    audit_results = {}
     found_count = 0
+    for label, keywords in criteria.items():
+        is_found = any(key in t for key in keywords)
+        audit_results[label] = "✅ Found" if is_found else "❌ Missing"
+        if is_found: found_count += 1
+    score = int((found_count / len(criteria)) * 100)
+    detailed_report = " | ".join([f"{k}: {v}" for k, v in audit_results.items()])
+    return score, detailed_report
 
-    for section, keywords in checks.items():
-        if any(key in t for key in keywords):
-            results.append(f"✅ {section} section found.")
-            found_count += 1
-        else:
-            results.append(f"❌ {section} section is missing or poorly labeled.")
 
-    # Contact Check
-    if "@" in t:
-        results.append("✅ Email address detected.")
-    else:
-        results.append("❌ No email address found.")
+# --- HELPERS ---
+def display_pdf(file_path):
+    with open(file_path, "rb") as f:
+        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+    st.markdown(pdf_display, unsafe_allow_html=True)
 
-    status = "Approved" if found_count >= 2 else "Needs Revision"
-    return results, status
 
-# --- UI ---
-st.set_page_config(page_title="Class CV Portal", layout="wide")
-st.title("🎓 Class CV Collection & Auto-Audit")
+def create_zip_of_cvs(folder_path):
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                if file.endswith(".pdf"):
+                    z.write(os.path.join(root, file), file)
+    return buf.getvalue()
 
-# Initialize Database
-if os.path.exists(DB_FILE):
-    df = pd.read_csv(DB_FILE)
-else:
-    df = pd.DataFrame(columns=["Name", "ID", "Status", "Timestamp"])
 
-tab1, tab2 = st.tabs(["📤 Student Submission", "📋 Admin Dashboard"])
+def load_data():
+    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE)
+    return pd.DataFrame(columns=["Name", "ID", "Score", "Audit_Details", "Timestamp"])
+
+
+# --- UI SETUP ---
+st.set_page_config(page_title="CV Management System", layout="wide")
+st.title("🎓 Smart CV Portal")
+
+tab1, tab2 = st.tabs(["📤 Student Submission", "🔒 Admin Dashboard"])
 
 with tab1:
-    with st.form("cv_form", clear_on_submit=True):
-        name = st.text_input("Full Name")
-        sid = st.text_input("Student ID")
-        file = st.file_uploader("Upload CV (PDF)", type=['pdf'])
-        submit = st.form_submit_button("Submit CV")
+    # --- STUDENT INSTRUCTIONS ---
+    st.info("""
+    ### 📝 Submission Instructions
+    Welcome to the Class CV Portal. Please follow these steps to ensure a successful submission:
+    1. **Format:** Ensure your CV is in **PDF format**.
+    2. **Details:** Enter your **Full Name** and **Student ID** exactly as they appear on your school records.
+    3. **Content:** Ensure your CV includes sections for *Education, Experience, Skills, Referees, and Contact Info*.
+    4. **Confirmation:** After clicking 'Submit', wait for the green 'Success' message.
+    """)
 
-        if submit and name and sid and file:
-            path = os.path.join(SAVE_FOLDER, f"{sid}.pdf")
-            with open(path, "wb") as f: f.write(file.getbuffer())
+    st.divider()
 
-            # Extract Text & Audit
-            with pdfplumber.open(file) as pdf:
-                text = " ".join([p.extract_text() for p in pdf.pages if p.extract_text()])
-
-            audit_notes, final_status = run_auto_audit(text)
-
-            # Save to CSV
-            new_row = {"Name": name, "ID": sid, "Status": final_status, "Timestamp": datetime.now()}
-            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-            df.to_csv(DB_FILE, index=False)
-
-            st.success(f"CV Submitted! Status: {final_status}")
-            for note in audit_notes: st.write(note)
+    with st.form("student_form", clear_on_submit=True):
+        st.subheader("Submit Your CV")
+        u_name = st.text_input("Full Name")
+        u_id = st.text_input("Student ID")
+        u_file = st.file_uploader("Upload CV (PDF)", type=['pdf'])
+        if st.form_submit_button("Submit CV"):
+            if u_name and u_id and u_file:
+                path = os.path.join(SAVE_FOLDER, f"{u_id}.pdf")
+                with open(path, "wb") as f:
+                    f.write(u_file.getbuffer())
+                with pdfplumber.open(u_file) as pdf:
+                    raw_text = " ".join([p.extract_text() for p in pdf.pages if p.extract_text()])
+                score, details = perform_detailed_audit(raw_text)
+                df = load_data()
+                new_row = pd.DataFrame([{"Name": u_name, "ID": u_id, "Score": score, "Audit_Details": details,
+                                         "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")}])
+                pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, index=False)
+                st.success(f"✅ CV for {u_name} received successfully! You may now close this tab.")
+            else:
+                st.error("⚠️ Please fill all fields and upload your PDF.")
 
 with tab2:
-    st.subheader("Database Overview")
-    st.dataframe(df, use_container_width=True)
+    if "authenticated" not in st.session_state: st.session_state["authenticated"] = False
+    if not st.session_state["authenticated"]:
+        with st.form("login"):
+            pw = st.text_input("Admin Password", type="password")
+            if st.form_submit_button("Login"):
+                if pw == ADMIN_PASSWORD:
+                    st.session_state["authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("Access Denied")
+    else:
+        c_head, c_log = st.columns([5, 1])
+        c_head.subheader("Admin Audit Dashboard")
+        if c_log.button("Logout"):
+            st.session_state["authenticated"] = False
+            st.rerun()
+
+        df_admin = load_data()
+        if not df_admin.empty:
+            zip_data = create_zip_of_cvs(SAVE_FOLDER)
+            st.download_button(label="📥 Download All CVs (.zip)", data=zip_data,
+                               file_name=f"CV_Collection_{datetime.now().strftime('%Y%m%d')}.zip",
+                               mime="application/zip")
+
+            st.dataframe(df_admin, use_container_width=True)
+            st.divider()
+
+            names = df_admin["Name"].dropna().unique().tolist()
+            if names:
+                sel = st.selectbox("Detailed Auditor View", options=names)
+                rec = df_admin[df_admin["Name"] == sel].iloc[-1]
+                c1, c2 = st.columns([1, 1.5])
+                with c1:
+                    st.metric("Score", f"{rec['Score']}/100")
+                    for line in str(rec['Audit_Details']).split(" | "):
+                        if "✅" in line:
+                            st.success(line)
+                        else:
+                            st.error(line)
+                with c2:
+                    f_path = os.path.join(SAVE_FOLDER, f"{rec['ID']}.pdf")
+                    if os.path.exists(f_path): display_pdf(f_path)
+
+            st.divider()
+            with st.expander("⚠️ Danger Zone (Reset Database)"):
+                st.warning("This will permanently delete all student records and PDF files.")
+                confirm = st.checkbox("I confirm I want to delete everything.")
+                if st.button("DELETE ALL DATA", type="primary"):
+                    if confirm:
+                        if os.path.exists(DB_FILE): os.remove(DB_FILE)
+                        shutil.rmtree(SAVE_FOLDER)
+                        os.makedirs(SAVE_FOLDER)
+                        st.success("All records and files have been deleted.")
+                        st.rerun()
+                    else:
+                        st.error("Please check the confirmation box first.")
+        else:
+            st.info("No submissions found.")

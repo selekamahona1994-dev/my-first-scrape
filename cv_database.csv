@@ -1,3 +1,8 @@
-Student Name,ID,Email,Last Updated,Status,File Path,Reviewer Notes
-seleka,40425018,kijaseni1994@gmail.com,2026-01-21 18:36,Standardized & Approved,cv_files\40425018_seleka.pdf,good
-kija,40425017,kijaseni1994@gmail.com,2026-01-21 18:44,Needs Revision,cv_files\40425017_kija.pdf,fanyia marekebisho
+Student Name,ID,Email,Last Updated,Status,File Path,Reviewer Notes,Name,Score,Timestamp,Audit_Details
+seleka,40425018,kijaseni1994@gmail.com,2026-01-21 18:36,Standardized & Approved,cv_files\40425018_seleka.pdf,good,,,,No Data
+kija,40425017,kijaseni1994@gmail.com,2026-01-21 18:44,Needs Revision,cv_files\40425017_kija.pdf,fanyia marekebisho,,,,No Data
+,40425018,,,Approved,,,seleka,100.0,2026-01-21 19:42,No Data
+,40425018,,,,,,seleka,50.0,2026-01-21 20:03,Personal Profile: ❌ Missing | Personal Details: ❌ Missing | Contact Info: ✅ Found | Language Proficiency: ✅ Found | Academic Qualification: ✅ Found | Professional Qualification: ❌ Missing | Professional Experience: ✅ Found | Training & Workshops: ✅ Found | Technical & Computer Literacy: ❌ Missing | Referees: ❌ Missing
+,40425018,,,,,,seleka,60.0,2026-01-21 20:08,Personal Profile: ❌ Missing | Personal Details: ❌ Missing | Contact Info: ✅ Found | Language Proficiency: ✅ Found | Academic Qualification: ✅ Found | Professional Qualification: ❌ Missing | Professional Experience: ✅ Found | Training & Workshops: ✅ Found | Technical & Computer Literacy: ✅ Found | Referees: ❌ Missing
+,40425018,,,,,,seleka,60.0,2026-01-21 20:53,Personal Profile: ❌ Missing | Personal Details: ❌ Missing | Contact Info: ✅ Found | Language Proficiency: ✅ Found | Academic Qualification: ✅ Found | Professional Qualification: ❌ Missing | Professional Experience: ✅ Found | Training & Workshops: ✅ Found | Technical & Computer Literacy: ✅ Found | Referees: ❌ Missing
+,40425017,,,,,,john,90.0,2026-01-21 20:55,Personal Profile: ✅ Found | Personal Details: ✅ Found | Contact Info: ✅ Found | Language Proficiency: ✅ Found | Academic Qualification: ✅ Found | Professional Qualification: ❌ Missing | Professional Experience: ✅ Found | Training & Workshops: ✅ Found | Technical & Computer Literacy: ✅ Found | Referees: ✅ Found
