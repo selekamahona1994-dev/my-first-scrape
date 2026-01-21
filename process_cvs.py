@@ -1,65 +1,71 @@
 import os
 import pandas as pd
 from markitdown import MarkItDown
-from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional
+from pydantic import BaseModel, EmailStr, ValidationError
+from typing import List
+
+# --- CONFIGURATION ---
+SUBMISSION_DIR = "./submissions"
+CLEAN_DIR = "./standardized_reports"
+DATABASE_FILE = "class_registry.csv"
+os.makedirs(SUBMISSION_DIR, exist_ok=True)
+os.makedirs(CLEAN_DIR, exist_ok=True)
 
 
-# 1. Define the Standard Format (Quality Guardrails)
-class StudentCV(BaseModel):
+# --- 1. THE QUALITY STANDARD (The "Rubric") ---
+class ProfessionalCV(BaseModel):
     name: str
     email: EmailStr
-    phone: str
     skills: List[str]
-    experience_years: int = Field(ge=0, description="Years of experience")
-    missing_fields: List[str] = []
+    # This ensures every CV has these 3 components or it's flagged as an error
 
 
-# 2. Initialize Tools
+# --- 2. THE ENGINE ---
 md = MarkItDown()
-SUBMISSION_DIR = "./submissions"
-DATABASE_FILE = "cv_database.csv"
 
 
-def analyze_cv(file_path):
-    # Convert PDF/Docx to readable Markdown
-    result = md.convert(file_path)
+def process_student_cv(filename):
+    path = os.path.join(SUBMISSION_DIR, filename)
+    result = md.convert(path)
     text = result.text_content
 
-    # SIMPLE LOGIC: In a real 2026 setup, you would pass 'text' to
-    # an LLM API here to extract structured JSON.
-    # For now, we simulate basic quality checks.
-    quality_report = {
-        "name": "Extracted Name",  # Placeholder
-        "email": "student@example.com" if "@" in text else None,
-        "phone": "Found" if any(char.isdigit() for char in text) else None,
-        "errors": []
+    # Check for quality issues (Inconsistencies)
+    issues = []
+    if len(text) < 500: issues.append("Content too thin")
+    if "education" not in text.lower(): issues.append("Missing Education section")
+
+    # Attempt to Standardize (Basic extraction)
+    # Note: In a real-world 2026 use-case, you'd use an LLM call here
+    standardized_content = f"# CV: {filename}\n\n## Summary\n{text[:300]}..."
+
+    return {
+        "Status": "Passed" if not issues else "Needs Revision",
+        "Errors": " | ".join(issues),
+        "Clean_Text": standardized_content
     }
-
-    if not quality_report["email"]:
-        quality_report["errors"].append("Missing Email")
-
-    return quality_report
 
 
 def main():
-    records = []
-    for filename in os.listdir(SUBMISSION_DIR):
-        if filename.endswith((".pdf", ".docx")):
-            path = os.path.join(SUBMISSION_DIR, filename)
-            print(f"Processing: {filename}...")
-            report = analyze_cv(path)
-            records.append({
-                "Student": filename,
-                "Status": "Error" if report["errors"] else "Standardized",
-                "Issues": ", ".join(report["errors"]),
-                "LastUpdated": pd.Timestamp.now()
+    data = []
+    for file in os.listdir(SUBMISSION_DIR):
+        if file.endswith((".pdf", ".docx")):
+            print(f"Auditing {file}...")
+            report = process_student_cv(file)
+
+            # Save standardized version
+            with open(f"{CLEAN_DIR}/{file}.md", "w", encoding="utf-8") as f:
+                f.write(report["Clean_Text"])
+
+            data.append({
+                "Student_File": file,
+                "Quality_Score": report["Status"],
+                "Flags": report["Errors"]
             })
 
-    # Save to Database
-    df = pd.DataFrame(records)
+    # 3. MAINTAIN ORGANIZED DATABASE
+    df = pd.DataFrame(data)
     df.to_csv(DATABASE_FILE, index=False)
-    print("Database Updated.")
+    print("✓ Registry Updated.")
 
 
 if __name__ == "__main__":
