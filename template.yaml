@@ -1,0 +1,8 @@
+name: "John Doe"
+email: "john.doe@email.com"
+github: "github.com/johndoe"
+skills: ["Python", "Machine Learning", "SQL"]
+experience:
+  - role: "Intern"
+    company: "Tech Corp"
+    year: "2025"

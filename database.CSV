@@ -1,0 +1,50 @@
+import os
+import yaml
+import pandas as pd
+
+def process_cvs(directory):
+    cv_data_list = []
+    quality_issues = []
+
+    # 1. Collect all files from the directory
+    for filename in os.listdir(directory):
+        if filename.endswith(".yaml") or filename.endswith(".yml"):
+            with open(os.path.join(directory, filename), 'r') as file:
+                try:
+                    data = yaml.safe_load(file)
+                    
+                    # 2. Check for Quality Issues / Errors
+                    issues = []
+                    if not data.get('email'): issues.append("Missing Email")
+                    if not data.get('skills'): issues.append("Missing Skills")
+                    
+                    if issues:
+                        quality_issues.append({"student": filename, "errors": issues})
+                    
+                    # 3. Standardize & Add to Database
+                    cv_data_list.append({
+                        "Name": data.get("name", "N/A"),
+                        "Email": data.get("email", "N/A"),
+                        "Skills": ", ".join(data.get("skills", [])),
+                        "Source_File": filename
+                    })
+                except Exception as e:
+                    print(f"Error reading {filename}: {e}")
+
+    # 4. Maintain organized database
+    df = pd.DataFrame(cv_data_list)
+    df.to_csv("class_cv_database.csv", index=False)
+    
+    return df, quality_issues
+
+# Usage
+# Place student yaml files in a folder named 'submissions'
+database, issues = process_cvs('submissions')
+
+print("--- CV Database Created ---")
+print(database.head())
+
+if issues:
+    print("\n--- Quality Issues Found ---")
+    for issue in issues:
+        print(f"File {issue['student']}: {issue['errors']}")
