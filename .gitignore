@@ -1,5 +1,4 @@
-.env
-venv/
+/
 __pycache__.streamlit/
 cv_files/
 cv_database.csv/

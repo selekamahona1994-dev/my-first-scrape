@@ -1,79 +1,80 @@
-import streamlit as st
+import import streamlit as st
 import pandas as pd
 import os
 import pdfplumber
-from google import genai
+import re
 from datetime import datetime
 
-# --- AI CONFIGURATION ---
-# This looks for the key in your .streamlit/secrets.toml file
-try:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
-    client = genai.Client(api_key=API_KEY)
-except Exception:
-    st.error("API Key not found. Please check your .streamlit/secrets.toml file.")
-    st.stop()
-
-# --- FILE PATHS ---
+# --- CONFIGURATION ---
 DB_FILE = "cv_database.csv"
 SAVE_FOLDER = "cv_files"
 if not os.path.exists(SAVE_FOLDER): os.makedirs(SAVE_FOLDER)
 
+# --- THE AUDIT ENGINE ---
+def run_auto_audit(text):
+    t = text.lower()
+    checks = {
+        "Education": ["education", "degree", "university", "college"],
+        "Experience": ["experience", "work", "employment", "internship"],
+        "Skills": ["skills", "tools", "technologies", "competencies"]
+    }
 
-def load_data():
-    if not os.path.exists(DB_FILE):
-        return pd.DataFrame(columns=["Name", "ID", "Email", "Status", "AI_Feedback", "Timestamp"])
-    return pd.read_csv(DB_FILE)
+    results = []
+    found_count = 0
 
+    for section, keywords in checks.items():
+        if any(key in t for key in keywords):
+            results.append(f"✅ {section} section found.")
+            found_count += 1
+        else:
+            results.append(f"❌ {section} section is missing or poorly labeled.")
 
-# --- APP INTERFACE ---
+    # Contact Check
+    if "@" in t:
+        results.append("✅ Email address detected.")
+    else:
+        results.append("❌ No email address found.")
+
+    status = "Approved" if found_count >= 2 else "Needs Revision"
+    return results, status
+
+# --- UI ---
 st.set_page_config(page_title="Class CV Portal", layout="wide")
-st.title("🎓 Smart CV Portal: Collection & AI Audit")
+st.title("🎓 Class CV Collection & Auto-Audit")
 
-df = load_data()
-tab1, tab2 = st.tabs(["📤 Student Upload", "📋 Admin Dashboard"])
+# Initialize Database
+if os.path.exists(DB_FILE):
+    df = pd.read_csv(DB_FILE)
+else:
+    df = pd.DataFrame(columns=["Name", "ID", "Status", "Timestamp"])
+
+tab1, tab2 = st.tabs(["📤 Student Submission", "📋 Admin Dashboard"])
 
 with tab1:
-    st.markdown("### Upload your CV for Automatic AI Review")
-    with st.form("cv_upload", clear_on_submit=True):
-        u_name = st.text_input("Full Name")
-        u_id = st.text_input("Student ID")
-        u_email = st.text_input("Email")
-        u_file = st.file_uploader("Upload PDF CV", type=['pdf'])
-        submit = st.form_submit_button("Submit & Scan for Mistakes")
+    with st.form("cv_form", clear_on_submit=True):
+        name = st.text_input("Full Name")
+        sid = st.text_input("Student ID")
+        file = st.file_uploader("Upload CV (PDF)", type=['pdf'])
+        submit = st.form_submit_button("Submit CV")
 
-        if submit and u_file:
-            path = os.path.join(SAVE_FOLDER, f"{u_id}.pdf")
-            with open(path, "wb") as f:
-                f.write(u_file.getbuffer())
+        if submit and name and sid and file:
+            path = os.path.join(SAVE_FOLDER, f"{sid}.pdf")
+            with open(path, "wb") as f: f.write(file.getbuffer())
 
-            with st.spinner("AI is auditing your CV..."):
-                try:
-                    # 1. Extract Text from PDF
-                    with pdfplumber.open(path) as pdf:
-                        cv_text = " ".join([page.extract_text() for page in pdf.pages if page.extract_text()])
+            # Extract Text & Audit
+            with pdfplumber.open(file) as pdf:
+                text = " ".join([p.extract_text() for p in pdf.pages if p.extract_text()])
 
-                    # 2. Get AI Feedback using the new library
-                    response = client.models.generate_content(
-                        model="gemini-2.0-flash",
-                        contents=f"Analyze this CV for: 1. Missing sections 2. Spelling errors 3. Tone. CV TEXT: {cv_text}"
-                    )
-                    feedback = response.text
-                except Exception as e:
-                    feedback = f"Processing Error: {str(e)}"
+            audit_notes, final_status = run_auto_audit(text)
 
-            # Update Database
-            new_entry = {
-                "Name": u_name, "ID": u_id, "Email": u_email,
-                "Status": "AI Audited", "AI_Feedback": feedback,
-                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
-            }
-            df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+            # Save to CSV
+            new_row = {"Name": name, "ID": sid, "Status": final_status, "Timestamp": datetime.now()}
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             df.to_csv(DB_FILE, index=False)
 
-            st.success("Submission Successful!")
-            st.info(f"**AI Audit Results:**\n\n{feedback}")
+            st.success(f"CV Submitted! Status: {final_status}")
+            for note in audit_notes: st.write(note)
 
 with tab2:
-    st.subheader("Class CV Database")
+    st.subheader("Database Overview")
     st.dataframe(df, use_container_width=True)
