@@ -2,80 +2,78 @@ import streamlit as st
 import pandas as pd
 import os
 import pdfplumber
-import google.generativeai as genai
+from google import genai
 from datetime import datetime
 
-# --- IMPORTANT: SECURE YOUR API KEY ---
-# In Streamlit Cloud, you will put this in "Secrets".
-# For local testing, replace the text below with your key.
-AI_KEY = st.secrets["GEMINI_API_KEY"] if "GEMINI_API_KEY" in st.secrets else "YOUR_GEMINI_KEY_HERE"
-genai.configure(api_key=AI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# --- AI CONFIGURATION ---
+# This looks for the key in your .streamlit/secrets.toml file
+try:
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+    client = genai.Client(api_key=API_KEY)
+except Exception:
+    st.error("API Key not found. Please check your .streamlit/secrets.toml file.")
+    st.stop()
 
-# --- CONFIG ---
+# --- FILE PATHS ---
 DB_FILE = "cv_database.csv"
 SAVE_FOLDER = "cv_files"
 if not os.path.exists(SAVE_FOLDER): os.makedirs(SAVE_FOLDER)
 
 
 def load_data():
-    if not os.path.exists(DB_FILE): return pd.DataFrame(columns=["Name", "ID", "Status", "AI_Review"])
+    if not os.path.exists(DB_FILE):
+        return pd.DataFrame(columns=["Name", "ID", "Email", "Status", "AI_Feedback", "Timestamp"])
     return pd.read_csv(DB_FILE)
 
 
-# --- THE AI BRAIN ---
-def analyze_cv(file_path):
-    # 1. Read PDF
-    text = ""
-    try:
-        with pdfplumber.open(file_path) as pdf:
-            for page in pdf.pages:
-                text += page.extract_text()
-    except:
-        return "Error: Could not read PDF file."
+# --- APP INTERFACE ---
+st.set_page_config(page_title="Class CV Portal", layout="wide")
+st.title("🎓 Smart CV Portal: Collection & AI Audit")
 
-    # 2. Ask AI to find mistakes
-    prompt = f"""
-    Analyze this student CV text for a class project. 
-    1. Identify missing sections (e.g., Skills, Contact, Education).
-    2. List spelling or grammar mistakes.
-    3. Suggest one way to improve professional tone.
-    Keep it brief and use bullet points.
-
-    CV TEXT: {text}
-    """
-    response = model.generate_content(prompt)
-    return response.text
-
-
-# --- UI ---
-st.title("🎓 Smart CV Class Portal")
 df = load_data()
-
-tab1, tab2 = st.tabs(["📤 Upload & AI Audit", "📋 Admin View"])
+tab1, tab2 = st.tabs(["📤 Student Upload", "📋 Admin Dashboard"])
 
 with tab1:
-    with st.form("upload_form", clear_on_submit=True):
-        name = st.text_input("Full Name")
-        sid = st.text_input("Student ID")
-        file = st.file_uploader("Upload your CV (PDF)", type=['pdf'])
-        if st.form_submit_button("Submit & Run AI Audit"):
-            if name and sid and file:
-                path = os.path.join(SAVE_FOLDER, f"{sid}.pdf")
-                with open(path, "wb") as f: f.write(file.getbuffer())
+    st.markdown("### Upload your CV for Automatic AI Review")
+    with st.form("cv_upload", clear_on_submit=True):
+        u_name = st.text_input("Full Name")
+        u_id = st.text_input("Student ID")
+        u_email = st.text_input("Email")
+        u_file = st.file_uploader("Upload PDF CV", type=['pdf'])
+        submit = st.form_submit_button("Submit & Scan for Mistakes")
 
-                # Run Automatic AI Check
-                with st.spinner("AI is checking for mistakes..."):
-                    feedback = analyze_cv(path)
+        if submit and u_file:
+            path = os.path.join(SAVE_FOLDER, f"{u_id}.pdf")
+            with open(path, "wb") as f:
+                f.write(u_file.getbuffer())
 
-                # Save to database
-                new_data = {"Name": name, "ID": sid, "Status": "AI Audited", "AI_Review": feedback}
-                df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-                df.to_csv(DB_FILE, index=False)
+            with st.spinner("AI is auditing your CV..."):
+                try:
+                    # 1. Extract Text from PDF
+                    with pdfplumber.open(path) as pdf:
+                        cv_text = " ".join([page.extract_text() for page in pdf.pages if page.extract_text()])
 
-                st.success("CV Received!")
-                st.subheader("🤖 AI Auditor Feedback:")
-                st.info(feedback)
+                    # 2. Get AI Feedback using the new library
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=f"Analyze this CV for: 1. Missing sections 2. Spelling errors 3. Tone. CV TEXT: {cv_text}"
+                    )
+                    feedback = response.text
+                except Exception as e:
+                    feedback = f"Processing Error: {str(e)}"
+
+            # Update Database
+            new_entry = {
+                "Name": u_name, "ID": u_id, "Email": u_email,
+                "Status": "AI Audited", "AI_Feedback": feedback,
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+            }
+            df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+            df.to_csv(DB_FILE, index=False)
+
+            st.success("Submission Successful!")
+            st.info(f"**AI Audit Results:**\n\n{feedback}")
 
 with tab2:
+    st.subheader("Class CV Database")
     st.dataframe(df, use_container_width=True)
