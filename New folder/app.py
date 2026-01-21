@@ -51,6 +51,15 @@ def perform_detailed_audit(text):
 def display_pdf(file_path):
     with open(file_path, "rb") as f:
         base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+
+    with open(file_path, "rb") as f:
+        st.download_button(
+            label="📄 Open PDF in New Tab / Download",
+            data=f,
+            file_name=os.path.basename(file_path),
+            mime="application/pdf"
+        )
+
     pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
     st.markdown(pdf_display, unsafe_allow_html=True)
 
@@ -77,38 +86,49 @@ st.title("🎓 Smart CV Portal")
 tab1, tab2 = st.tabs(["📤 Student Submission", "🔒 Admin Dashboard"])
 
 with tab1:
-    # --- STUDENT INSTRUCTIONS ---
     st.info("""
     ### 📝 Submission Instructions
-    Welcome to the Class CV Portal. Please follow these steps to ensure a successful submission:
-    1. **Format:** Ensure your CV is in **PDF format**.
-    2. **Details:** Enter your **Full Name** and **Student ID** exactly as they appear on your school records.
-    3. **Content:** Ensure your CV includes sections for *Education, Experience, Skills, Referees, and Contact Info*.
-    4. **Confirmation:** After clicking 'Submit', wait for the green 'Success' message.
+    1. **Full Name:** Use letters only (no numbers).
+    2. **Student ID:** Use numbers only (max 10 digits).
+    3. **Format:** Upload your CV in **PDF format**.
     """)
 
     st.divider()
 
     with st.form("student_form", clear_on_submit=True):
         st.subheader("Submit Your CV")
-        u_name = st.text_input("Full Name")
-        u_id = st.text_input("Student ID")
+        u_name = st.text_input("Full Name (Letters only)")
+        u_id = st.text_input("Student ID (Numbers only, max 10)")
         u_file = st.file_uploader("Upload CV (PDF)", type=['pdf'])
+
         if st.form_submit_button("Submit CV"):
-            if u_name and u_id and u_file:
+            # 1. Check if empty
+            if not (u_name and u_id and u_file):
+                st.error("⚠️ Please fill all fields and upload your PDF.")
+
+            # 2. Validate Name (No numbers allowed)
+            elif not u_name.replace(" ", "").isalpha():
+                st.error("❌ Invalid Name: Please use letters only (no numbers or symbols).")
+
+            # 3. Validate ID (Only numbers and max 10 digits)
+            elif not (u_id.isdigit() and len(u_id) <= 10):
+                st.error("❌ Invalid ID: Please enter numbers only (maximum 10 digits).")
+
+            else:
+                # All checks passed - Proceed to save
                 path = os.path.join(SAVE_FOLDER, f"{u_id}.pdf")
                 with open(path, "wb") as f:
                     f.write(u_file.getbuffer())
+
                 with pdfplumber.open(u_file) as pdf:
                     raw_text = " ".join([p.extract_text() for p in pdf.pages if p.extract_text()])
+
                 score, details = perform_detailed_audit(raw_text)
                 df = load_data()
                 new_row = pd.DataFrame([{"Name": u_name, "ID": u_id, "Score": score, "Audit_Details": details,
                                          "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")}])
                 pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, index=False)
-                st.success(f"✅ CV for {u_name} received successfully! You may now close this tab.")
-            else:
-                st.error("⚠️ Please fill all fields and upload your PDF.")
+                st.success(f"✅ CV for {u_name} received successfully!")
 
 with tab2:
     if "authenticated" not in st.session_state: st.session_state["authenticated"] = False
@@ -144,15 +164,19 @@ with tab2:
                 rec = df_admin[df_admin["Name"] == sel].iloc[-1]
                 c1, c2 = st.columns([1, 1.5])
                 with c1:
-                    st.metric("Score", f"{rec['Score']}/100")
+                    st.metric("Audit Score", f"{rec['Score']}/100")
                     for line in str(rec['Audit_Details']).split(" | "):
                         if "✅" in line:
                             st.success(line)
                         else:
                             st.error(line)
                 with c2:
+                    st.subheader("CV Preview")
                     f_path = os.path.join(SAVE_FOLDER, f"{rec['ID']}.pdf")
-                    if os.path.exists(f_path): display_pdf(f_path)
+                    if os.path.exists(f_path):
+                        display_pdf(f_path)
+                    else:
+                        st.warning(f"File not found: {rec['ID']}.pdf")
 
             st.divider()
             with st.expander("⚠️ Danger Zone (Reset Database)"):
