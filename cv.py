@@ -4,90 +4,75 @@ import pandas as pd
 from datetime import datetime
 from pypdf import PdfReader
 
-# --- CONFIGURATION ---
 SOURCE_FOLDER = 'student_uploads'
 DATABASE_FILE = 'cv_database.csv'
 
 
-def initialize_system():
-    """Ensures the environment is ready for processing."""
-    if not os.path.exists(SOURCE_FOLDER):
-        os.makedirs(SOURCE_FOLDER)
-        print(f"[*] Created folder: {SOURCE_FOLDER}")
-
-    if not os.path.exists(DATABASE_FILE):
-        df = pd.DataFrame(columns=['Student Name', 'Filename', 'Last Updated', 'Email Found', 'Phone Found', 'Status'])
-        df.to_csv(DATABASE_FILE, index=False)
-        print("[*] Created database file.")
+def clean_name(filename):
+    """Standardizes the student name from the filename."""
+    name = filename.replace('.pdf', '').replace('_', ' ').replace('-', ' ')
+    return name.title()
 
 
-def check_cv_content(filepath):
-    """Parses PDF to find errors and missing contact info."""
-    results = {"email": "No", "phone": "No", "errors": []}
-
+def analyze_cv(filepath):
+    """Checks for quality, errors, and consistency."""
+    report = {"email": "Missing", "phone": "Missing", "word_count": 0, "issues": []}
     try:
         reader = PdfReader(filepath)
         text = ""
         for page in reader.pages:
             text += page.extract_text()
 
-        # Search for email pattern
-        if re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text):
-            results["email"] = "Yes"
+        report["word_count"] = len(text.split())
 
-        # Search for phone pattern (Simple 10+ digit check)
+        # Check for Errors/Inconsistencies
+        if re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text):
+            report["email"] = "Found"
         if re.search(r'\+?\d{10,15}', text):
-            results["phone"] = "Yes"
+            report["phone"] = "Found"
+
+        # Quality Issue: Too short
+        if report["word_count"] < 100:
+            report["issues"].append("Content too short")
 
     except Exception as e:
-        results["errors"].append(f"Read Error: {str(e)}")
+        report["issues"].append(f"Unreadable file: {str(e)}")
+    return report
 
-    return results
 
+def sync_and_standardize():
+    if not os.path.exists(SOURCE_FOLDER): os.makedirs(SOURCE_FOLDER)
 
-def sync_cvs():
-    initialize_system()
-    db = pd.read_csv(DATABASE_FILE)
-
-    files = [f for f in os.listdir(SOURCE_FOLDER) if f.endswith('.pdf')]
-
-    if not files:
-        print("[!] No PDF files found in 'student_uploads'. Please add files and run again.")
-        return
-
+    files = [f for f in os.listdir(SOURCE_FOLDER) if f.lower().endswith('.pdf')]
     updated_data = []
 
     for filename in files:
-        path = os.path.join(SOURCE_FOLDER, filename)
-        mod_time = datetime.fromtimestamp(os.path.getmtime(path)).strftime('%Y-%m-%d %H:%M')
+        old_path = os.path.join(SOURCE_FOLDER, filename)
 
-        # Standardize Name (Assuming format: Name_ID.pdf)
-        student_name = filename.replace('.pdf', '').replace('_', ' ')
+        # --- 1. STANDARDIZATION (Renaming) ---
+        student_name = clean_name(filename)
+        standard_filename = f"CV_{student_name.replace(' ', '_')}.pdf"
+        new_path = os.path.join(SOURCE_FOLDER, standard_filename)
 
-        # Analyze Content
-        analysis = check_cv_content(path)
+        if old_path != new_path:
+            os.rename(old_path, new_path)
 
-        # Determine Status
-        status = "Perfect" if (analysis["email"] == "Yes" and analysis["phone"] == "Yes") else "Missing Info"
+        # --- 2. REVIEW & QUALITY CHECK ---
+        analysis = analyze_cv(new_path)
+        mod_time = datetime.fromtimestamp(os.path.getmtime(new_path)).strftime('%Y-%m-%d %H:%M')
 
         updated_data.append({
             'Student Name': student_name,
-            'Filename': filename,
             'Last Updated': mod_time,
-            'Email Found': analysis["email"],
-            'Phone Found': analysis["phone"],
-            'Status': status
+            'Email': analysis["email"],
+            'Phone': analysis["phone"],
+            'Word Count': analysis["word_count"],
+            'Quality Issues': ", ".join(analysis["issues"]) if analysis["issues"] else "None"
         })
 
-    # Save to CSV
-    new_db = pd.DataFrame(updated_data)
-    new_db.to_csv(DATABASE_FILE, index=False)
-
-    print("-" * 30)
-    print(f"SUCCESS: Processed {len(files)} CVs.")
-    print(f"Results saved to: {DATABASE_FILE}")
-    print("-" * 30)
+    pd.DataFrame(updated_data).to_csv(DATABASE_FILE, index=False)
+    print(f"--- Processed {len(files)} CVs. Database updated. ---")
 
 
 if __name__ == "__main__":
-    sync_cvs()
+    sync_and_standardize()
