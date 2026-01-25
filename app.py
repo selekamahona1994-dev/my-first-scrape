@@ -72,6 +72,19 @@ def load_data():
 
 # --- UI SETUP ---
 st.set_page_config(page_title="CV Management System", layout="wide")
+
+# Added CSS to hide the "Manage app" and Hamburger Menu
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            button[title="View source code"] {display: none;}
+            .stAppDeployButton {display: none;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 st.title("🎓 Smart CV Portal")
 
 tab1, tab2 = st.tabs(["📤 Student Submission", "🔒 Admin Dashboard"])
